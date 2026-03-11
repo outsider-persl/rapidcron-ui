@@ -1,14 +1,14 @@
 import request from '@/utils/request'
-import type { ApiResponse, Stats, Task, TaskInstance } from '@/types'
+import type { ApiResponse, Stats, Task, TaskInstance, ClusterNode, ClusterStats } from '@/types'
 
 export const statsApi = {
   getStats(): Promise<ApiResponse<Stats>> {
-    return request.get('/stats')
+    return request.get('/tasks/stats')
   }
 }
 
 export const tasksApi = {
-  getTasks(params?: { enabled?: boolean; page?: number; page_size?: number }): Promise<ApiResponse<{ tasks: Task[]; total: number }>> {
+  getTasks(params?: { enabled?: boolean; page?: number; page_size?: number }): Promise<ApiResponse<{ items: Task[]; total: number; page: number; page_size: number; total_pages: number }>> {
     return request.get('/tasks', { params })
   },
 
@@ -58,7 +58,7 @@ export const tasksApi = {
     return request.post(`/tasks/${id}/disable`)
   },
 
-  triggerTask(id: string, data?: { scheduled_time?: string | null }): Promise<ApiResponse<TaskInstance>> {
+  triggerTask(id: string, data?: { scheduled_time?: number | null }): Promise<ApiResponse<TaskInstance>> {
     return request.post(`/tasks/${id}/trigger`, data)
   }
 }
@@ -69,11 +69,37 @@ export const instancesApi = {
     status?: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
     page?: number
     page_size?: number
-  }): Promise<ApiResponse<{ instances: TaskInstance[]; total: number }>> {
-    return request.get('/instances', { params })
+  }): Promise<ApiResponse<{ items: TaskInstance[]; total: number; page: number; page_size: number; total_pages: number }>> {
+    return request.get('/tasks/instances', { params })
   },
 
   getInstance(id: string): Promise<ApiResponse<TaskInstance>> {
-    return request.get(`/instances/${id}`)
+    return request.get(`/tasks/instances/${id}`)
+  }
+}
+
+export const clusterApi = {
+  getNodes(): Promise<ApiResponse<{ nodes: ClusterNode[]; total_nodes: number; active_nodes: number }>> {
+    return request.get('/clusters/info')
+  },
+
+  getNode(id: string): Promise<ApiResponse<ClusterNode>> {
+    return request.get(`/clusters/${id}`)
+  },
+
+  getClusterStats(): Promise<ApiResponse<ClusterStats>> {
+    return request.get('/clusters/stats')
+  },
+
+  addNode(data: { name: string; ip: string; port: number; role: 'master' | 'worker' }): Promise<ApiResponse<ClusterNode>> {
+    return request.post('/clusters', data)
+  },
+
+  removeNode(id: string): Promise<ApiResponse<null>> {
+    return request.delete(`/clusters/${id}`)
+  },
+
+  updateNode(id: string, data: Partial<{ name: string; role: 'master' | 'worker' }>): Promise<ApiResponse<ClusterNode>> {
+    return request.put(`/clusters/${id}`, data)
   }
 }

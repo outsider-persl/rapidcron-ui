@@ -33,6 +33,20 @@
           </template>
           <template v-else-if="column.key === 'actions'">
             <a-space>
+              <a-tooltip title="触发任务">
+                <a-button type="text" @click="triggerTask(record._id)">
+                  <template #icon>
+                    <RocketOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
+              <a-tooltip title="查看实例">
+                <a-button type="text" @click="viewTaskInstances(record._id)">
+                  <template #icon>
+                    <HistoryOutlined />
+                  </template>
+                </a-button>
+              </a-tooltip>
               <a-tooltip :title="record.enabled ? '禁用' : '启用'">
                 <a-button type="text" @click="toggleTask(record)">
                   <template #icon>
@@ -113,21 +127,64 @@
         </div>
       </a-form>
     </a-modal>
+
+    <a-modal
+      v-model:open="showInstancesModal"
+      :title="`任务实例详情（任务ID：${currentTaskId}）`"
+      :footer="null"
+      width="1000px"
+      :style="{ maxWidth: '90vw' }"
+      :bodyStyle="{ maxHeight: '70vh', overflowY: 'auto' }"
+    >
+      <a-table :columns="instanceColumns" :data-source="taskInstances" :loading="instancesLoading" :pagination="{
+        current: instancePagination.current,
+        pageSize: instancePagination.pageSize,
+        total: instancePagination.total,
+        onChange: (current: number, pageSize: number) => handleInstancePaginationChange(current, pageSize)
+      }"
+        :row-key="(record: TaskInstance) => formatId(record._id)"
+        bordered
+        :scroll="{ x: 'max-content' }"
+        @resizeColumn="handleInstanceResizeColumn"
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === '_id'">
+            <a-tooltip :title="formatId(record._id)">
+              <span>{{ formatId(record._id) }}</span>
+            </a-tooltip>
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <a-tag :color="getStatusColor(record.status)">
+              {{ getStatusText(record.status) }}
+            </a-tag>
+          </template>
+          <template v-else-if="column.key === 'result'">
+            <a-tooltip :title="formatResult(record.result)" placement="top">
+              <span>{{ (formatResult(record.result)).length > 50 ? (formatResult(record.result).substring(0, 50) +
+                '...') : formatResult(record.result) }}</span>
+            </a-tooltip>
+          </template>
+        </template>
+      </a-table>
+    </a-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive } from 'vue'
 import { message } from 'ant-design-vue'
+import type { TableColumnsType } from 'ant-design-vue'
 import {
   PlusOutlined,
   PlayCircleOutlined,
   PauseOutlined,
   DeleteOutlined,
-  BulbOutlined
+  BulbOutlined,
+  RocketOutlined,
+  HistoryOutlined
 } from '@ant-design/icons-vue'
-import type { Task } from '../types'
-import { tasksApi } from '../api'
+import type { Task, TaskInstance } from '../types'
+import { tasksApi, instancesApi } from '../api'
 
 const columns = [
   {
@@ -157,12 +214,167 @@ const columns = [
   }
 ]
 
+const instanceColumns = ref<TableColumnsType>([
+  {
+    title: '实例ID',
+    key: '_id',
+    dataIndex: '_id',
+    ellipsis: true,
+    width: 100,
+    resizable: true,
+    minWidth: 80
+  },
+  {
+    title: '状态',
+    key: 'status',
+    dataIndex: 'status',
+    width: 80,
+    resizable: true,
+    minWidth: 80,
+    maxWidth: 150
+  },
+  {
+    title: '计划执行时间',
+    key: 'scheduled_time',
+    dataIndex: 'scheduled_time',
+    ellipsis: true,
+    width: 180,
+    resizable: true,
+    customRender: ({ text }: { text: any }) => formatDate(text)
+  },
+  {
+    title: '开始时间',
+    key: 'start_time',
+    dataIndex: 'start_time',
+    ellipsis: true,
+    width: 180,
+    resizable: true,
+    customRender: ({ text }: { text: any }) => formatDate(text)
+  },
+  {
+    title: '结束时间',
+    key: 'end_time',
+    dataIndex: 'end_time',
+    ellipsis: true,
+    width: 180,
+    resizable: true,
+    customRender: ({ text }: { text: any }) => formatDate(text)
+  },
+  {
+    title: '创建时间',
+    key: 'created_at',
+    dataIndex: 'created_at',
+    ellipsis: true,
+    width: 180,
+    resizable: true,
+    customRender: ({ text }: { text: any }) => formatDate(text)
+  },
+  {
+    title: '重试次数',
+    key: 'retry_count',
+    dataIndex: 'retry_count',
+    width: 100,
+    resizable: true,
+    minWidth: 80,
+    maxWidth: 200
+  },
+  {
+    title: '执行结果',
+    key: 'result',
+    dataIndex: 'result',
+    width: 250,
+    resizable: true,
+    customRender: ({ text }: { text: any }) => {
+      const resultText = formatResult(text)
+      return resultText.length > 50 ? `${resultText.substring(0, 50)}...` : resultText
+    }
+  }
+])
+
+const handleInstanceResizeColumn = (w: number, col: any) => {
+  col.width = w
+}
+
+const getStatusColor = (status: string) => {
+  switch (status) {
+    case 'success': return 'success'
+    case 'failed': return 'error'
+    case 'running': return 'processing'
+    case 'pending': return 'warning'
+    case 'cancelled': return 'default'
+    default: return 'default'
+  }
+}
+
+const getStatusText = (status: string) => {
+  switch (status) {
+    case 'success': return '成功'
+    case 'failed': return '失败'
+    case 'running': return '运行中'
+    case 'pending': return '待执行'
+    case 'cancelled': return '已取消'
+    default: return status
+  }
+}
+
+const formatResult = (result: any): string => {
+  if (!result) return '-'
+
+  try {
+    // 如果 result 是对象且包含 output 字段
+    if (typeof result === 'object' && result.output) {
+      // 尝试解析 output 为 JSON
+      try {
+        const outputObj = JSON.parse(result.output)
+        return outputObj.message || JSON.stringify(outputObj)
+      } catch {
+        // 如果 output 不是 JSON，直接返回
+        return result.output
+      }
+    }
+    // 如果 result 是字符串，直接返回
+    if (typeof result === 'string') {
+      return result
+    }
+    // 其他情况，转换为字符串
+    return JSON.stringify(result)
+  } catch (error) {
+    console.error('格式化结果失败:', error)
+    return '-'
+  }
+}
+
+const formatId = (id: { $oid: string } | string) => {
+  if (typeof id === 'object' && id.$oid) {
+    return id.$oid
+  }
+  return id
+}
+
+const formatDate = (date: { $date: { $numberLong: string } } | string | null) => {
+  if (!date) return '-'
+  if (typeof date === 'object' && date.$date && date.$date.$numberLong) {
+    const timestamp = parseInt(date.$date.$numberLong)
+    return new Date(timestamp).toLocaleString()
+  }
+  return date
+}
+
 const tasks = ref<Task[]>([])
 const searchTerm = ref('')
 const loading = ref(false)
 const showCreateModal = ref(false)
 const aiPrompt = ref('')
 const aiGenerating = ref(false)
+const showInstancesModal = ref(false)
+const taskInstances = ref<TaskInstance[]>([])
+const instancesLoading = ref(false)
+const currentTaskId = ref('')
+const instancePagination = ref({
+  current: 1,
+  pageSize: 10,
+  total: 0
+})
 
 const formState = reactive({
   name: '',
@@ -194,7 +406,10 @@ const loadTasks = async () => {
   try {
     const response = await tasksApi.getTasks()
     if (response.success && response.data) {
-      tasks.value = response.data.tasks
+      tasks.value = response.data.items.map((task: any) => ({
+        ...task,
+        _id: typeof task._id === 'object' && task._id.$oid ? task._id.$oid : task._id
+      }))
     }
   } catch (error) {
     console.error('加载任务失败:', error)
@@ -221,6 +436,10 @@ const toggleTask = async (task: Task) => {
 }
 
 const deleteTask = async (id: string) => {
+  if (!id || id.trim() === '') {
+    message.error('无效的任务 ID')
+    return
+  }
   try {
     await tasksApi.deleteTask(id)
     message.success('任务已删除')
@@ -229,6 +448,66 @@ const deleteTask = async (id: string) => {
     console.error('删除任务失败:', error)
     message.error('删除任务失败')
   }
+}
+
+const triggerTask = async (id: string) => {
+  try {
+    await tasksApi.triggerTask(id)
+    message.success('任务已触发')
+  } catch (error) {
+    console.error('触发任务失败:', error)
+    message.error('触发任务失败')
+  }
+}
+
+const viewTaskInstances = async (id: string) => {
+  currentTaskId.value = id
+  instancePagination.value.current = 1
+  await loadTaskInstances()
+  showInstancesModal.value = true
+}
+
+const loadTaskInstances = async () => {
+  instancesLoading.value = true
+  try {
+    console.log('加载任务实例，参数:', {
+      task_id: currentTaskId.value,
+      page: instancePagination.value.current,
+      page_size: instancePagination.value.pageSize
+    })
+    const response = await instancesApi.getInstances({
+      task_id: currentTaskId.value,
+      page: instancePagination.value.current,
+      page_size: instancePagination.value.pageSize
+    })
+    console.log('响应结果:', response)
+
+    // 调整判断逻辑，只要响应中有数据就视为成功
+    if (response.data && response.data.items) {
+      taskInstances.value = response.data.items
+      instancePagination.value.total = response.data.total || 0
+      console.log('加载成功，数据量:', response.data.items.length, '总记录数:', response.data.total)
+    } else {
+      // 如果响应中没有数据，视为失败
+      console.error('响应中没有数据:', response)
+      message.error('加载任务实例失败')
+      instancePagination.value.current = 1
+      await loadTaskInstances()
+    }
+  } catch (error) {
+    console.error('加载任务实例失败:', error)
+    message.error('加载任务实例失败')
+    // 重置分页状态到第一页
+    instancePagination.value.current = 1
+  } finally {
+    instancesLoading.value = false
+  }
+}
+
+const handleInstancePaginationChange = (current: number, pageSize: number) => {
+  instancePagination.value.current = current
+  instancePagination.value.pageSize = pageSize
+  loadTaskInstances()
 }
 
 const handleAiGenerate = async () => {
@@ -390,5 +669,12 @@ loadTasks()
   justify-content: flex-end;
   gap: 12px;
   margin-top: 24px;
+}
+
+.instance-result {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

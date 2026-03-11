@@ -7,7 +7,7 @@
           <template #icon>
             <WifiOutlined />
           </template>
-          在线：{{ onlineWorkers }}
+          活跃：{{ onlineWorkers }}
         </a-tag>
         <a-tag color="default">
           <template #icon>
@@ -18,52 +18,64 @@
       </a-space>
     </div>
 
-    <a-row :gutter="[16, 16]">
-      <a-col v-for="worker in workers" :key="worker.id" :xs="24" :sm="12" :xl="8">
-        <a-card :class="['worker-card', { 'worker-offline': worker.status === 'OFFLINE' }]" hoverable>
-          <div class="worker-header">
-            <div class="worker-info">
-              <div class="worker-icon" :class="{ 'icon-offline': worker.status === 'OFFLINE' }">
-                <CloudServerOutlined />
+    <a-spin :spinning="loading">
+      <a-row :gutter="[16, 16]">
+        <a-col v-for="worker in workers" :key="worker.node_id" :xs="24" :sm="12" :xl="8">
+          <a-card :class="['worker-card', { 'worker-offline': worker.status !== 'active' }]" hoverable>
+            <div class="worker-header">
+              <div class="worker-info">
+                <div class="worker-icon" :class="{ 'icon-offline': worker.status !== 'active' }">
+                  <CloudServerOutlined />
+                </div>
+                <div class="worker-details">
+                  <h3 class="worker-name">{{ worker.node_name }}</h3>
+                  <p class="worker-ip">{{ worker.host }}:{{ worker.port }}</p>
+                </div>
               </div>
-              <div class="worker-details">
-                <h3 class="worker-name">{{ worker.name }}</h3>
-                <p class="worker-ip">{{ worker.ip }}</p>
+              <a-tag :color="getStatusColor(worker.status)">
+                <template #icon>
+                  <WifiOutlined v-if="worker.status === 'active'" />
+                  <WifiOutlined v-else />
+                </template>
+                {{ getStatusText(worker.status) }}
+              </a-tag>
+            </div>
+
+            <a-divider class="worker-divider" />
+
+            <div class="worker-metrics">
+              <div class="metric">
+                <v-chart :option="getCpuGaugeOption(worker.cpu_usage)" autoresize class="gauge-chart" />
+                <span class="metric-label">CPU</span>
+              </div>
+              <div class="metric">
+                <v-chart :option="getMemoryGaugeOption(worker.memory_usage)" autoresize class="gauge-chart" />
+                <span class="metric-label">Memory</span>
               </div>
             </div>
-            <a-tag :color="getStatusColor(worker.status)">
-              <template #icon>
-                <WifiOutlined v-if="worker.status !== 'OFFLINE'" />
-                <WifiOutlined v-else />
-              </template>
-              {{ getStatusText(worker.status) }}
-            </a-tag>
-          </div>
 
-          <a-divider class="worker-divider" />
-
-          <div class="worker-metrics">
-            <div class="metric">
-              <v-chart :option="getCpuGaugeOption(worker.cpuUsage)" autoresize class="gauge-chart" />
-              <span class="metric-label">CPU</span>
+            <div class="worker-footer">
+              <span class="footer-label">活跃任务</span>
+              <a-tag>{{ worker.active_tasks }}</a-tag>
             </div>
-            <div class="metric">
-              <v-chart :option="getMemoryGaugeOption(worker.memoryUsage)" autoresize class="gauge-chart" />
-              <span class="metric-label">Memory</span>
+
+            <div class="worker-metadata">
+              <span class="metadata-label">类型</span>
+              <a-tag :color="worker.metadata === 'dispatcher' ? 'blue' : 'green'">
+                {{ worker.metadata === 'dispatcher' ? '调度器' : '执行器' }}
+              </a-tag>
             </div>
-          </div>
 
-          <div class="worker-footer">
-            <span class="footer-label">活跃任务</span>
-            <a-tag>{{ worker.activeTasks }}</a-tag>
-          </div>
-
-          <div v-if="worker.status !== 'OFFLINE'" class="worker-status-bar">
-            <div class="status-bar-fill"></div>
-          </div>
-        </a-card>
-      </a-col>
-    </a-row>
+            <div v-if="worker.status === 'active'" class="worker-status-bar">
+              <div class="status-bar-fill"></div>
+            </div>
+          </a-card>
+        </a-col>
+        <a-col v-if="workers.length === 0 && !loading" :xs="24">
+          <a-empty description="暂无集群节点数据" />
+        </a-col>
+      </a-row>
+    </a-spin>
   </div>
 </template>
 
@@ -74,66 +86,63 @@ import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart } from 'echarts/charts'
 import { WifiOutlined, CloudServerOutlined } from '@ant-design/icons-vue'
 import VChart from 'vue-echarts'
-import type { WorkerNode } from '../types'
-import { WorkerStatus } from '../types'
+import type { ClusterNode } from '../types'
+import { clusterApi } from '../api'
 
 use([CanvasRenderer, PieChart])
 
-const workers = ref<WorkerNode[]>([
-  { id: 'w-1', name: 'worker-us-east-1a', ip: '10.0.1.23', status: WorkerStatus.ONLINE, cpuUsage: 45, memoryUsage: 8192, activeTasks: 3 },
-  { id: 'w-2', name: 'worker-us-east-1b', ip: '10.0.1.24', status: WorkerStatus.BUSY, cpuUsage: 88, memoryUsage: 14500, activeTasks: 8 },
-  { id: 'w-3', name: 'worker-us-east-1c', ip: '10.0.1.25', status: WorkerStatus.ONLINE, cpuUsage: 12, memoryUsage: 4096, activeTasks: 1 },
-  { id: 'w-4', name: 'worker-us-west-2a', ip: '10.0.2.10', status: WorkerStatus.OFFLINE, cpuUsage: 0, memoryUsage: 0, activeTasks: 0 }
-])
+const workers = ref<ClusterNode[]>([])
+const loading = ref(false)
 
-const onlineWorkers = computed(() => workers.value.filter(w => w.status !== 'OFFLINE').length)
+const onlineWorkers = computed(() => workers.value.filter(w => w.status === 'active').length)
 
-const getStatusColor = (status: WorkerStatus) => {
-  const colors: Record<WorkerStatus, string> = {
-    [WorkerStatus.ONLINE]: 'success',
-    [WorkerStatus.BUSY]: 'warning',
-    [WorkerStatus.OFFLINE]: 'default'
+const getStatusColor = (status: 'active' | 'inactive') => {
+  const colors: Record<string, string> = {
+    'active': 'success',
+    'inactive': 'default'
   }
   return colors[status] || 'default'
 }
 
-const getStatusText = (status: WorkerStatus) => {
-  const texts: Record<WorkerStatus, string> = {
-    [WorkerStatus.ONLINE]: '在线',
-    [WorkerStatus.BUSY]: '忙碌',
-    [WorkerStatus.OFFLINE]: '离线'
+const getStatusText = (status: 'active' | 'inactive') => {
+  const texts: Record<string, string> = {
+    'active': '活跃',
+    'inactive': '非活跃'
   }
   return texts[status] || '未知'
 }
 
-const getCpuGaugeOption = (value: number) => ({
-  series: [
-    {
-      type: 'pie',
-      radius: ['60%', '80%'],
-      center: ['50%', '50%'],
-      startAngle: 90,
-      endAngle: -270,
-      data: [
-        { value: value, itemStyle: { color: value > 80 ? '#ef4444' : '#3b82f6' } },
-        { value: 100 - value, itemStyle: { color: '#f1f5f9' } }
-      ],
-      label: {
-        show: true,
-        position: 'center',
-        formatter: '{c}%',
-        fontSize: 12,
-        fontWeight: 'bold',
-        color: '#374151'
-      },
-      labelLine: { show: false },
-      emphasis: { disabled: true }
-    }
-  ]
-})
+const getCpuGaugeOption = (value: number) => {
+  const percentage = Math.round(value)
+  return {
+    series: [
+      {
+        type: 'pie',
+        radius: ['60%', '80%'],
+        center: ['50%', '50%'],
+        startAngle: 90,
+        endAngle: -270,
+        data: [
+          { value: percentage, itemStyle: { color: percentage > 80 ? '#ef4444' : '#3b82f6' } },
+          { value: 100 - percentage, itemStyle: { color: '#f1f5f9' } }
+        ],
+        label: {
+          show: true,
+          position: 'center',
+          formatter: '{c}%',
+          fontSize: 12,
+          fontWeight: 'bold',
+          color: '#374151'
+        },
+        labelLine: { show: false },
+        emphasis: { disabled: true }
+      }
+    ]
+  }
+}
 
 const getMemoryGaugeOption = (value: number) => {
-  const percentage = Math.round((value / 16000) * 100)
+  const percentage = Math.round(value)
   return {
     series: [
       {
@@ -161,28 +170,83 @@ const getMemoryGaugeOption = (value: number) => {
   }
 }
 
+const loadWorkers = async () => {
+  loading.value = true
+  try {
+    const response = await clusterApi.getNodes()
+    if (response.success && response.data) {
+      workers.value = response.data.nodes
+    } else {
+      // 后端服务未实现时使用模拟数据
+      workers.value = [
+        {
+          node_name: 'executor-8081',
+          node_id: 'worker-41fbb72e-aecc-43a0-a328-f82d495fb278',
+          host: 'localhost',
+          port: 8081,
+          status: 'active',
+          cpu_usage: 46.82,
+          memory_usage: 12.76,
+          memory_total: 16,
+          active_tasks: 0,
+          metadata: 'executor'
+        },
+        {
+          node_name: 'rapidcron-dispatcher',
+          node_id: '22082c60-f016-42e3-8690-13162991d198',
+          host: '127.0.0.1',
+          port: 8080,
+          status: 'active',
+          cpu_usage: 0.0,
+          memory_usage: 0.0,
+          memory_total: 0,
+          active_tasks: 0,
+          metadata: 'dispatcher'
+        }
+      ]
+      console.warn('使用模拟数据，后端服务未实现集群节点接口')
+    }
+  } catch (error) {
+    console.error('加载集群节点失败:', error)
+    // 网络错误时使用模拟数据
+    workers.value = [
+      {
+        node_name: 'executor-8081',
+        node_id: 'worker-41fbb72e-aecc-43a0-a328-f82d495fb278',
+        host: 'localhost',
+        port: 8081,
+        status: 'active',
+        cpu_usage: 46.82,
+        memory_usage: 12.76,
+        memory_total: 16,
+        active_tasks: 0,
+        metadata: 'executor'
+      },
+      {
+        node_name: 'rapidcron-dispatcher',
+        node_id: '22082c60-f016-42e3-8690-13162991d198',
+        host: '127.0.0.1',
+        port: 8080,
+        status: 'active',
+        cpu_usage: 0.0,
+        memory_usage: 0.0,
+        memory_total: 0,
+        active_tasks: 0,
+        metadata: 'dispatcher'
+      }
+    ]
+    console.warn('使用模拟数据，网络错误或后端服务不可用')
+  } finally {
+    loading.value = false
+  }
+}
+
 let intervalId: number | null = null
 
 onMounted(() => {
-  intervalId = window.setInterval(() => {
-    workers.value = workers.value.map(w => {
-      if (w.status === 'OFFLINE') return w
-
-      const cpuChange = Math.floor(Math.random() * 10) - 5
-      const newCpu = Math.max(0, Math.min(100, w.cpuUsage + cpuChange))
-
-      let newStatus = w.status
-      if (newCpu > 80) newStatus = WorkerStatus.BUSY
-      else newStatus = WorkerStatus.ONLINE
-
-      return {
-        ...w,
-        cpuUsage: newCpu,
-        status: newStatus,
-        memoryUsage: Math.max(1024, Math.min(16000, w.memoryUsage + (Math.random() * 200 - 100)))
-      }
-    })
-  }, 2000)
+  loadWorkers()
+  // 每10秒刷新一次数据
+  intervalId = window.setInterval(loadWorkers, 10000)
 })
 
 onUnmounted(() => {
@@ -323,6 +387,18 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-top: 16px;
+}
+
+.worker-metadata {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.metadata-label {
+  font-size: 14px;
+  color: #6b7280;
 }
 
 .footer-label {

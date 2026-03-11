@@ -12,6 +12,28 @@ export enum WorkerStatus {
   BUSY = 'BUSY'
 }
 
+export interface ClusterNode {
+  node_name: string
+  node_id: string
+  host: string
+  port: number
+  status: 'active' | 'inactive'
+  cpu_usage: number
+  memory_usage: number
+  memory_total: number
+  active_tasks: number
+  metadata: string
+}
+
+export interface ClusterStats {
+  total_nodes: number
+  online_nodes: number
+  master_nodes: number
+  worker_nodes: number
+  total_cpu_usage: number
+  total_memory_usage: number
+}
+
 export interface Task {
   _id: string
   name: string
@@ -37,16 +59,16 @@ export interface WorkerNode {
 }
 
 export interface TaskInstance {
-  _id: string
-  task_id: string
-  scheduled_time: string
+  _id: { $oid: string }
+  task_id: { $oid: string }
+  scheduled_time: { $date: { $numberLong: string } }
   status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
   executor_id: string | null
-  start_time: string | null
-  end_time: string | null
+  start_time: { $date: { $numberLong: string } } | null
+  end_time: { $date: { $numberLong: string } } | null
   retry_count: number
   result: any
-  created_at: string
+  created_at: { $date: { $numberLong: string } }
 }
 
 export interface ApiResponse<T = any> {
@@ -65,4 +87,4 @@ export interface Stats {
   failed_instances: number
 }
 
-export type ViewState = 'DASHBOARD' | 'TASKS' | 'WORKERS' | 'SETTINGS'
+export type ViewState = 'DASHBOARD' | 'TASKS' | 'WORKERS' | 'CLUSTER' | 'SETTINGS'

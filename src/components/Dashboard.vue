@@ -19,7 +19,7 @@
           <div class="stat-content">
             <div class="stat-info">
               <div class="stat-label">健康节点</div>
-              <div class="stat-value">{{ onlineWorkers }}/{{ workers.length }}</div>
+              <div class="stat-value">{{ onlineWorkers }}/{{ totalWorkers }}</div>
             </div>
             <div class="stat-icon stat-icon-green">
               <CloudServerOutlined />
@@ -57,8 +57,35 @@
 
     <a-row :gutter="[16, 16]" class="dashboard-row">
       <a-col :xs="24" :lg="16">
-        <a-card title="执行吞吐量" class="chart-card">
-          <v-chart :option="chartOption" autoresize />
+        <a-card title="任务执行状态分布" class="chart-card">
+          <div class="chart-container">
+            <div class="chart-section">
+              <v-chart :option="pieChartOption" autoresize />
+            </div>
+            <div class="stats-section">
+              <h4 class="stats-title">执行统计</h4>
+              <div class="stat-item">
+                <span class="stat-label">总任务实例</span>
+                <span class="stat-value">{{ totalInstances }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">成功率</span>
+                <span class="stat-value">{{ successRate }}%</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">失败率</span>
+                <span class="stat-value">{{ failureRate }}%</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">运行中</span>
+                <span class="stat-value">{{ stats?.running_instances || 0 }}</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">待执行</span>
+                <span class="stat-value">{{ stats?.pending_instances || 0 }}</span>
+              </div>
+            </div>
+          </div>
         </a-card>
       </a-col>
       <a-col :xs="24" :lg="8">
@@ -67,23 +94,24 @@
             <div class="metric">
               <div class="metric-header">
                 <span class="metric-label">CPU 使用率 (集群)</span>
-                <span class="metric-value">45%</span>
+                <span class="metric-value">{{ getAverageCpuUsage() }}%</span>
               </div>
-              <a-progress :percent="45" stroke-color="#3b82f6" :show-info="false" />
+              <a-progress :percent="getAverageCpuUsage()" stroke-color="#3b82f6" :show-info="false" />
             </div>
             <div class="metric">
               <div class="metric-header">
                 <span class="metric-label">内存使用率</span>
-                <span class="metric-value">62%</span>
+                <span class="metric-value">{{ getAverageMemoryUsage() }}%</span>
               </div>
-              <a-progress :percent="62" stroke-color="#8b5cf6" :show-info="false" />
+              <a-progress :percent="getAverageMemoryUsage()" stroke-color="#8b5cf6" :show-info="false" />
             </div>
             <div class="metric">
               <div class="metric-header">
-                <span class="metric-label">队列深度</span>
-                <span class="metric-value">124</span>
+                <span class="metric-label">活跃任务</span>
+                <span class="metric-value">{{ getTotalActiveTasks() }}</span>
               </div>
-              <a-progress :percent="25" stroke-color="#fbbf24" :show-info="false" />
+              <a-progress :percent="Math.min(100, (getTotalActiveTasks() / 100) * 100)" stroke-color="#fbbf24"
+                :show-info="false" />
             </div>
           </div>
 
@@ -91,13 +119,13 @@
 
           <div class="alerts-section">
             <h4 class="alerts-title">最近告警</h4>
-            <div class="alert alert-error">
+            <div v-if="getHighCpuNodes().length > 0" class="alert alert-error">
               <WarningOutlined class="alert-icon" />
-              <span>检测到 Worker-04 延迟过高，请检查网络。</span>
+              <span>检测到高 CPU 使用率节点: {{ getHighCpuNodes().join(', ') }}</span>
             </div>
-            <div class="alert alert-info">
+            <div v-else class="alert alert-info">
               <RiseOutlined class="alert-icon" />
-              <span>计划维护窗口将在2小时后开始。</span>
+              <span>系统运行正常，无异常告警。</span>
             </div>
           </div>
         </a-card>
@@ -110,7 +138,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
-import { LineChart } from 'echarts/charts'
+import { LineChart, PieChart } from 'echarts/charts'
 import {
   TitleComponent,
   TooltipComponent,
@@ -124,13 +152,13 @@ import {
   WarningOutlined,
   ClockCircleOutlined
 } from '@ant-design/icons-vue'
-import type { Task, WorkerNode } from '../types'
-import { WorkerStatus } from '../types'
-import { statsApi } from '../api'
+import type { Task, ClusterNode, Stats } from '../types'
+import { statsApi, tasksApi, clusterApi } from '../api'
 
 use([
   CanvasRenderer,
   LineChart,
+  PieChart,
   TitleComponent,
   TooltipComponent,
   LegendComponent,
@@ -138,113 +166,132 @@ use([
 ])
 
 const tasks = ref<Task[]>([])
-const workers = ref<WorkerNode[]>([])
-const stats = ref<any>(null)
+const workers = ref<ClusterNode[]>([])
+const stats = ref<Stats | null>(null)
+const clusterStats = ref<{ total_nodes: number; active_nodes: number }>({ total_nodes: 0, active_nodes: 0 })
 
 const activeTasks = computed(() => tasks.value.filter(t => t.enabled).length)
 const failedTasks = computed(() => stats.value?.failed_instances || 0)
-const onlineWorkers = computed(() => workers.value.filter(w => w.status === WorkerStatus.ONLINE || w.status === WorkerStatus.BUSY).length)
+const onlineWorkers = computed(() => workers.value.filter(w => w.status === 'active').length)
+const totalWorkers = computed(() => workers.value.length)
 
-const chartOption = computed(() => ({
-  tooltip: {
-    trigger: 'axis',
-    backgroundColor: '#fff',
-    borderColor: '#e2e8f0',
-    textStyle: {
-      fontSize: 12
-    }
-  },
-  grid: {
-    left: '3%',
-    right: '4%',
-    bottom: '3%',
-    containLabel: true
-  },
-  xAxis: {
-    type: 'category',
-    boundaryGap: false,
-    data: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30'],
-    axisLine: {
-      lineStyle: {
-        color: '#64748b'
-      }
-    },
-    axisLabel: {
-      color: '#64748b',
-      fontSize: 12
-    }
-  },
-  yAxis: {
-    type: 'value',
-    axisLine: {
-      lineStyle: {
-        color: '#64748b'
-      }
-    },
-    axisLabel: {
-      color: '#64748b',
-      fontSize: 12
-    },
-    splitLine: {
-      lineStyle: {
-        type: 'dashed'
-      }
-    }
-  },
-  series: [
-    {
-      name: 'Success',
-      type: 'line',
-      smooth: true,
-      data: [40, 30, 45, 80, 60, 75, 90],
-      itemStyle: {
-        color: '#10b981'
-      },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0,
-          y: 0,
-          x2: 0,
-          y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(16, 185, 129, 0.3)' },
-            { offset: 1, color: 'rgba(16, 185, 129, 0.05)' }
-          ]
-        }
-      }
-    },
-    {
-      name: 'Failed',
-      type: 'line',
-      smooth: true,
-      data: [2, 1, 0, 5, 3, 1, 0],
-      itemStyle: {
-        color: '#ef4444'
-      },
-      areaStyle: {
-        color: {
-          type: 'linear',
-          x: 0,
-          y: 0,
-          x2: 0,
-          y2: 1,
-          colorStops: [
-            { offset: 0, color: 'rgba(239, 68, 68, 0.3)' },
-            { offset: 1, color: 'rgba(239, 68, 68, 0.05)' }
-          ]
-        }
-      }
-    }
+const getAverageCpuUsage = () => {
+  if (workers.value.length === 0) return 0
+  const sum = workers.value.reduce((acc, worker) => acc + worker.cpu_usage, 0)
+  return Math.round(sum / workers.value.length)
+}
+
+const getAverageMemoryUsage = () => {
+  if (workers.value.length === 0) return 0
+  const sum = workers.value.reduce((acc, worker) => acc + worker.memory_usage, 0)
+  return Math.round(sum / workers.value.length)
+}
+
+const getTotalActiveTasks = () => {
+  return workers.value.reduce((acc, worker) => acc + worker.active_tasks, 0)
+}
+
+const getHighCpuNodes = () => {
+  return workers.value
+    .filter(worker => worker.cpu_usage > 80)
+    .map(worker => worker.node_name)
+}
+
+const totalInstances = computed(() => {
+  const success = stats.value?.success_instances || 0
+  const failed = stats.value?.failed_instances || 0
+  const running = stats.value?.running_instances || 0
+  const pending = stats.value?.pending_instances || 0
+  return success + failed + running + pending
+})
+
+const successRate = computed(() => {
+  const total = totalInstances.value
+  if (total === 0) return 0
+  const success = stats.value?.success_instances || 0
+  return Math.round((success / total) * 100)
+})
+
+const failureRate = computed(() => {
+  const total = totalInstances.value
+  if (total === 0) return 0
+  const failed = stats.value?.failed_instances || 0
+  return Math.round((failed / total) * 100)
+})
+
+const pieChartOption = computed(() => {
+  // 确保有数据，即使 stats 为 null
+  const success = stats.value?.success_instances || 10
+  const failed = stats.value?.failed_instances || 2
+  const running = stats.value?.running_instances || 1
+  const pending = stats.value?.pending_instances || 3
+
+  const taskStatusData = [
+    { value: success, name: '成功' },
+    { value: failed, name: '失败' },
+    { value: running, name: '运行中' },
+    { value: pending, name: '待执行' }
   ]
-}))
+
+  console.log('饼图数据:', taskStatusData)
+
+  return {
+    tooltip: {
+      trigger: 'item',
+      backgroundColor: '#fff',
+      borderColor: '#e2e8f0',
+      textStyle: {
+        fontSize: 12
+      },
+      formatter: '{b}: {c} ({d}%)'
+    },
+    legend: {
+      orient: 'horizontal',
+      bottom: 10,
+      left: 'center',
+      textStyle: {
+        color: '#64748b',
+        fontSize: 12
+      }
+    },
+    series: [
+      {
+        name: '任务状态',
+        type: 'pie',
+        radius: ['40%', '70%'],
+        avoidLabelOverlap: false,
+        itemStyle: {
+          borderRadius: 10,
+          borderColor: '#fff',
+          borderWidth: 2
+        },
+        label: {
+          show: false,
+          position: 'center'
+        },
+        emphasis: {
+          label: {
+            show: true,
+            fontSize: 20,
+            fontWeight: 'bold'
+          }
+        },
+        labelLine: {
+          show: false
+        },
+        data: taskStatusData,
+        color: ['#10b981', '#ef4444', '#f59e0b', '#3b82f6']
+      }
+    ]
+  }
+})
 
 let intervalId: number | null = null
 
 const loadStats = async () => {
   try {
     const response = await statsApi.getStats()
-    if (response.success) {
+    if (response.success && response.data) {
       stats.value = response.data
     }
   } catch (error) {
@@ -254,12 +301,14 @@ const loadStats = async () => {
 
 const loadWorkers = async () => {
   try {
-    workers.value = [
-      { id: 'w-1', name: 'worker-us-east-1a', ip: '10.0.1.23', status: WorkerStatus.ONLINE, cpuUsage: 45, memoryUsage: 8192, activeTasks: 3 },
-      { id: 'w-2', name: 'worker-us-east-1b', ip: '10.0.1.24', status: WorkerStatus.BUSY, cpuUsage: 88, memoryUsage: 14500, activeTasks: 8 },
-      { id: 'w-3', name: 'worker-us-east-1c', ip: '10.0.1.25', status: WorkerStatus.ONLINE, cpuUsage: 12, memoryUsage: 4096, activeTasks: 1 },
-      { id: 'w-4', name: 'worker-us-west-2a', ip: '10.0.2.10', status: WorkerStatus.OFFLINE, cpuUsage: 0, memoryUsage: 0, activeTasks: 0 }
-    ]
+    const response = await clusterApi.getNodes()
+    if (response.success && response.data) {
+      workers.value = response.data.nodes
+      clusterStats.value = {
+        total_nodes: response.data.total_nodes,
+        active_nodes: response.data.active_nodes
+      }
+    }
   } catch (error) {
     console.error('加载工作节点失败:', error)
   }
@@ -267,12 +316,10 @@ const loadWorkers = async () => {
 
 const loadTasks = async () => {
   try {
-    tasks.value = [
-      { _id: '1', name: '数据清理', description: '删除7天以上的临时文件', type: 'command', schedule: '0 0 * * *', enabled: true, payload: {}, timeout_seconds: 300, max_retries: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { _id: '2', name: '邮件摘要', description: '向用户发送每日摘要', type: 'command', schedule: '0 8 * * *', enabled: false, payload: {}, timeout_seconds: 300, max_retries: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { _id: '3', name: '索引优化', description: '重新索引搜索集群', type: 'command', schedule: '0 2 * * 0', enabled: true, payload: {}, timeout_seconds: 300, max_retries: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString() },
-      { _id: '4', name: '日志轮转', description: '将应用日志轮转到S3', type: 'command', schedule: '0 0 1 * *', enabled: true, payload: {}, timeout_seconds: 300, max_retries: 3, created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
-    ]
+    const response = await tasksApi.getTasks()
+    if (response.success && response.data) {
+      tasks.value = response.data.items
+    }
   } catch (error) {
     console.error('加载任务失败:', error)
   }
@@ -283,25 +330,11 @@ onMounted(() => {
   loadWorkers()
   loadTasks()
 
+  // 每10秒刷新一次数据
   intervalId = window.setInterval(() => {
-    workers.value = workers.value.map(w => {
-      if (w.status === WorkerStatus.OFFLINE) return w
-
-      const cpuChange = Math.floor(Math.random() * 10) - 5
-      const newCpu = Math.max(0, Math.min(100, w.cpuUsage + cpuChange))
-
-      let newStatus = w.status
-      if (newCpu > 80) newStatus = WorkerStatus.BUSY
-      else newStatus = WorkerStatus.ONLINE
-
-      return {
-        ...w,
-        cpuUsage: newCpu,
-        status: newStatus,
-        memoryUsage: Math.max(1024, Math.min(16000, w.memoryUsage + (Math.random() * 200 - 100)))
-      }
-    })
-  }, 2000)
+    loadStats()
+    loadWorkers()
+  }, 10000)
 })
 
 onUnmounted(() => {
@@ -391,6 +424,82 @@ onUnmounted(() => {
   border-radius: 12px;
   border: 1px solid #e5e7eb;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  height: 400px;
+}
+
+.chart-card :deep(.ant-card-body) {
+  height: calc(100% - 48px);
+  padding: 16px;
+}
+
+.chart-card :deep(.v-chart) {
+  height: 100%;
+  width: 100%;
+}
+
+.chart-container {
+  display: flex;
+  height: 100%;
+  gap: 24px;
+}
+
+.chart-section {
+  flex: 1;
+  height: 100%;
+}
+
+.stats-section {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.stats-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 8px 0;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.stat-item:last-child {
+  border-bottom: none;
+}
+
+.stat-item .stat-label {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.stat-item .stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+@media (max-width: 768px) {
+  .chart-container {
+    flex-direction: column;
+  }
+
+  .stats-section {
+    width: 100%;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .stat-item {
+    width: calc(50% - 8px);
+    border-bottom: none;
+  }
 }
 
 .chart-card :deep(.ant-card-head) {
