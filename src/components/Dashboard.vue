@@ -221,16 +221,20 @@ const failureRate = computed(() => {
 
 const pieChartOption = computed(() => {
   // 确保有数据，即使 stats 为 null
-  const success = stats.value?.success_instances || 10
-  const failed = stats.value?.failed_instances || 2
-  const running = stats.value?.running_instances || 1
-  const pending = stats.value?.pending_instances || 3
+  const success = stats.value?.success_instances || 0
+  const failed = stats.value?.failed_instances || 0
+  const running = stats.value?.running_instances || 0
+  const pending = stats.value?.pending_instances || 0
 
+  // 检查是否有真实数据
+  const hasRealData = success > 0 || failed > 0 || running > 0 || pending > 0
+
+  // 如果没有真实数据，使用默认数据以确保图表能够正常显示
   const taskStatusData = [
-    { value: success, name: '成功' },
-    { value: failed, name: '失败' },
-    { value: running, name: '运行中' },
-    { value: pending, name: '待执行' }
+    { value: hasRealData ? success : 10, name: '成功' },
+    { value: hasRealData ? failed : 2, name: '失败' },
+    { value: hasRealData ? running : 1, name: '运行中' },
+    { value: hasRealData ? pending : 3, name: '待执行' }
   ]
 
   console.log('饼图数据:', taskStatusData)
