@@ -123,13 +123,13 @@ const getCpuGaugeOption = (value: number) => {
         startAngle: 90,
         endAngle: -270,
         data: [
-          { value: percentage, itemStyle: { color: percentage > 80 ? '#ef4444' : '#3b82f6' } },
-          { value: 100 - percentage, itemStyle: { color: '#f1f5f9' } }
+          { value: 100 - percentage, itemStyle: { color: '#f1f5f9' } },
+          { value: percentage, itemStyle: { color: percentage > 80 ? '#ef4444' : '#3b82f6' } }
         ],
         label: {
           show: true,
           position: 'center',
-          formatter: '{c}%',
+          formatter: () => `${percentage}%`,
           fontSize: 12,
           fontWeight: 'bold',
           color: '#374151'
@@ -152,13 +152,13 @@ const getMemoryGaugeOption = (value: number) => {
         startAngle: 90,
         endAngle: -270,
         data: [
-          { value: percentage, itemStyle: { color: '#8b5cf6' } },
-          { value: 100 - percentage, itemStyle: { color: '#f1f5f9' } }
+          { value: 100 - percentage, itemStyle: { color: '#f1f5f9' } },
+          { value: percentage, itemStyle: { color: '#8b5cf6' } }
         ],
         label: {
           show: true,
           position: 'center',
-          formatter: '{c}%',
+          formatter: () => `${percentage}%`,
           fontSize: 12,
           fontWeight: 'bold',
           color: '#374151'

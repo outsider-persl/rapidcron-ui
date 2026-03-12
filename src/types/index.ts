@@ -68,6 +68,7 @@ export interface TaskInstance {
   end_time: { $date: { $numberLong: string } } | null
   retry_count: number
   result: any
+  triggered_by: 'scheduler' | 'manual'
   created_at: { $date: { $numberLong: string } }
 }
 
@@ -87,4 +88,31 @@ export interface Stats {
   failed_instances: number
 }
 
-export type ViewState = 'DASHBOARD' | 'TASKS' | 'WORKERS' | 'CLUSTER' | 'SETTINGS'
+export interface Log {
+  _id: string
+  task_id: string
+  task_name: string
+  instance_id: string
+  scheduled_time: string
+  start_time: string
+  end_time: string
+  status: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+  duration_ms: number
+  output_summary: string
+  error_message: string | null
+  triggered_by: 'scheduler' | 'manual'
+}
+
+export interface DispatchLog {
+  _id: any
+  scan_time: any
+  scan_window_start: any
+  scan_window_end: any
+  total_tasks: number
+  enabled_tasks: number
+  dispatched_instances: number
+  error?: string
+  has_error?: boolean
+}
+
+export type ViewState = 'DASHBOARD' | 'TASKS' | 'WORKERS' | 'SETTINGS' | 'LOGS'

@@ -44,11 +44,11 @@
         <a-card class="stat-card">
           <div class="stat-content">
             <div class="stat-info">
-              <div class="stat-label">平均执行时间</div>
-              <div class="stat-value">450ms</div>
+              <div class="stat-label">任务成功 (24h)</div>
+              <div class="stat-value">{{ successTasks }}</div>
             </div>
-            <div class="stat-icon stat-icon-indigo">
-              <ClockCircleOutlined />
+            <div class="stat-icon stat-icon-green">
+              <CheckCircleOutlined />
             </div>
           </div>
         </a-card>
@@ -150,7 +150,7 @@ import {
   RiseOutlined,
   CloudServerOutlined,
   WarningOutlined,
-  ClockCircleOutlined
+  CheckCircleOutlined
 } from '@ant-design/icons-vue'
 import type { Task, ClusterNode, Stats } from '../types'
 import { statsApi, tasksApi, clusterApi } from '../api'
@@ -172,6 +172,7 @@ const clusterStats = ref<{ total_nodes: number; active_nodes: number }>({ total_
 
 const activeTasks = computed(() => tasks.value.filter(t => t.enabled).length)
 const failedTasks = computed(() => stats.value?.failed_instances || 0)
+const successTasks = computed(() => stats.value?.success_instances || 0)
 const onlineWorkers = computed(() => workers.value.filter(w => w.status === 'active').length)
 const totalWorkers = computed(() => workers.value.length)
 
@@ -229,12 +230,14 @@ const pieChartOption = computed(() => {
   // 检查是否有真实数据
   const hasRealData = success > 0 || failed > 0 || running > 0 || pending > 0
 
-  // 如果没有真实数据，使用默认数据以确保图表能够正常显示
-  const taskStatusData = [
-    { value: hasRealData ? success : 10, name: '成功' },
-    { value: hasRealData ? failed : 2, name: '失败' },
-    { value: hasRealData ? running : 1, name: '运行中' },
-    { value: hasRealData ? pending : 3, name: '待执行' }
+  // 如果没有真实数据，只显示待执行状态
+  const taskStatusData = hasRealData ? [
+    { value: success, name: '成功' },
+    { value: failed, name: '失败' },
+    { value: running, name: '运行中' },
+    { value: pending, name: '待执行' }
+  ] : [
+    { value: 1, name: '待执行' }
   ]
 
   console.log('饼图数据:', taskStatusData)

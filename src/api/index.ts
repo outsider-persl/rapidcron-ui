@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { ApiResponse, Stats, Task, TaskInstance, ClusterNode, ClusterStats } from '@/types'
+import type { ApiResponse, Stats, Task, TaskInstance, ClusterNode, ClusterStats, Log, DispatchLog } from '@/types'
 
 export const statsApi = {
   getStats(): Promise<ApiResponse<Stats>> {
@@ -101,5 +101,38 @@ export const clusterApi = {
 
   updateNode(id: string, data: Partial<{ name: string; role: 'master' | 'worker' }>): Promise<ApiResponse<ClusterNode>> {
     return request.put(`/clusters/${id}`, data)
+  }
+}
+
+export const logsApi = {
+  // 执行日志
+  getExecutionLogs(params?: {
+    task_id?: string
+    instance_id?: string
+    status?: 'pending' | 'running' | 'success' | 'failed' | 'cancelled'
+    triggered_by?: 'scheduler' | 'manual'
+    page?: number
+    page_size?: number
+  }): Promise<ApiResponse<{ items: Log[]; total: number; page: number; page_size: number; total_pages: number }>> {
+    return request.get('/execution/logs', { params })
+  },
+
+  getExecutionLog(id: string): Promise<ApiResponse<Log>> {
+    return request.get(`/execution/logs/${id}`)
+  },
+
+  // 分发日志
+  getDispatchLogs(params?: {
+    start_time?: string
+    end_time?: string
+    has_error?: boolean
+    page?: number
+    page_size?: number
+  }): Promise<ApiResponse<{ items: DispatchLog[]; total: number; page: number; page_size: number; total_pages: number }>> {
+    return request.get('/dispatch/logs', { params })
+  },
+
+  getDispatchLog(id: string): Promise<ApiResponse<DispatchLog>> {
+    return request.get(`/dispatch/logs/${id}`)
   }
 }

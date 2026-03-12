@@ -70,18 +70,6 @@
 
     <a-modal v-model:open="showCreateModal" title="新建任务" :footer="null" width="600px">
       <a-form :model="formState" :rules="rules" @finish="handleCreateTask" layout="vertical">
-        <div class="ai-helper">
-          <div class="ai-helper-header">
-            <BulbOutlined class="ai-icon" />
-            <span class="ai-helper-title">AI 助手</span>
-          </div>
-          <a-input-search v-model:value="aiPrompt" placeholder="例如：每周日凌晨3点执行数据库清理" enter-button="生成"
-            :loading="aiGenerating" @search="handleAiGenerate" class="ai-input" />
-          <p class="ai-helper-hint">
-            描述您的需求，我会自动填充下面的技术细节。
-          </p>
-        </div>
-
         <a-form-item label="任务名称" name="name">
           <a-input v-model:value="formState.name" placeholder="例如：数据库备份" />
         </a-form-item>
@@ -94,7 +82,7 @@
         </a-form-item>
 
         <a-form-item label="Cron 表达式" name="schedule">
-          <a-input v-model:value="formState.schedule" placeholder="例如：0 0 * * 0" class="cron-input" />
+          <a-input v-model:value="formState.schedule" placeholder="例如：0 0 0 * * 0" class="cron-input" />
         </a-form-item>
 
         <a-form-item v-if="formState.task_type === 'command'" label="命令" name="command">
@@ -128,25 +116,15 @@
       </a-form>
     </a-modal>
 
-    <a-modal
-      v-model:open="showInstancesModal"
-      :title="`任务实例详情（任务ID：${currentTaskId}）`"
-      :footer="null"
-      width="1000px"
-      :style="{ maxWidth: '90vw' }"
-      :bodyStyle="{ maxHeight: '70vh', overflowY: 'auto' }"
-    >
+    <a-modal v-model:open="showInstancesModal" :title="`任务实例详情（任务ID：${currentTaskId}）`" :footer="null" width="1000px"
+      :style="{ maxWidth: '90vw' }" :bodyStyle="{ maxHeight: '70vh', overflowY: 'auto' }">
       <a-table :columns="instanceColumns" :data-source="taskInstances" :loading="instancesLoading" :pagination="{
         current: instancePagination.current,
         pageSize: instancePagination.pageSize,
         total: instancePagination.total,
         onChange: (current: number, pageSize: number) => handleInstancePaginationChange(current, pageSize)
-      }"
-        :row-key="(record: TaskInstance) => formatId(record._id)"
-        bordered
-        :scroll="{ x: 'max-content' }"
-        @resizeColumn="handleInstanceResizeColumn"
-      >
+      }" :row-key="(record: TaskInstance) => formatId(record._id)" bordered :scroll="{ x: 'max-content' }"
+        @resizeColumn="handleInstanceResizeColumn">
         <template #bodyCell="{ column, record }">
           <template v-if="column.key === '_id'">
             <a-tooltip :title="formatId(record._id)">
@@ -179,7 +157,6 @@ import {
   PlayCircleOutlined,
   PauseOutlined,
   DeleteOutlined,
-  BulbOutlined,
   RocketOutlined,
   HistoryOutlined
 } from '@ant-design/icons-vue'
@@ -232,6 +209,18 @@ const instanceColumns = ref<TableColumnsType>([
     resizable: true,
     minWidth: 80,
     maxWidth: 150
+  },
+  {
+    title: '触发方式',
+    key: 'triggered_by',
+    dataIndex: 'triggered_by',
+    width: 100,
+    resizable: true,
+    minWidth: 80,
+    maxWidth: 150,
+    customRender: ({ text }: { text: string }) => {
+      return text === 'scheduler' ? '调度器' : '手动'
+    }
   },
   {
     title: '计划执行时间',
@@ -364,8 +353,6 @@ const tasks = ref<Task[]>([])
 const searchTerm = ref('')
 const loading = ref(false)
 const showCreateModal = ref(false)
-const aiPrompt = ref('')
-const aiGenerating = ref(false)
 const showInstancesModal = ref(false)
 const taskInstances = ref<TaskInstance[]>([])
 const instancesLoading = ref(false)
@@ -452,7 +439,7 @@ const deleteTask = async (id: string) => {
 
 const triggerTask = async (id: string) => {
   try {
-    await tasksApi.triggerTask(id)
+    await tasksApi.triggerTask(id, { scheduled_time: null })
     message.success('任务已触发')
   } catch (error) {
     console.error('触发任务失败:', error)
@@ -510,31 +497,7 @@ const handleInstancePaginationChange = (current: number, pageSize: number) => {
   loadTaskInstances()
 }
 
-const handleAiGenerate = async () => {
-  if (!aiPrompt.value.trim()) return
-  aiGenerating.value = true
-  try {
-    const response = await fetch('/api/ai/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: aiPrompt.value })
-    })
-    const data = await response.json()
-    if (data.success) {
-      formState.name = data.data.name
-      formState.schedule = data.data.schedule
-      formState.description = data.data.description
-      formState.command = data.data.command || ''
-      formState.url = data.data.url || ''
-      message.success('任务配置生成成功')
-    }
-  } catch (error) {
-    console.error('生成任务配置失败:', error)
-    message.error('生成任务配置失败')
-  } finally {
-    aiGenerating.value = false
-  }
-}
+
 
 const handleCreateTask = async () => {
   try {
@@ -553,7 +516,6 @@ const handleCreateTask = async () => {
         max_retries: 3,
         enabled: true
       })
-      aiPrompt.value = ''
       await loadTasks()
     }
   } catch (error) {
@@ -624,41 +586,7 @@ loadTasks()
   white-space: nowrap;
 }
 
-.ai-helper {
-  background: #eef2ff;
-  border: 1px solid #c7d2fe;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 24px;
-}
 
-.ai-helper-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.ai-icon {
-  color: #6366f1;
-  font-size: 16px;
-}
-
-.ai-helper-title {
-  font-size: 14px;
-  font-weight: 500;
-  color: #4338ca;
-}
-
-.ai-input {
-  margin-bottom: 8px;
-}
-
-.ai-helper-hint {
-  font-size: 12px;
-  color: #6366f1;
-  margin: 0;
-}
 
 .cron-input {
   font-family: 'Courier New', monospace;

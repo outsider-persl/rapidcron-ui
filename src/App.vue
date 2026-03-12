@@ -26,13 +26,14 @@
             </template>
             集群节点
           </a-menu-item>
-          <a-menu-item key="CLUSTER" @click="currentView = 'CLUSTER'">
-            <template #icon>
-              <ClusterOutlined />
-            </template>
-            集群管理
-          </a-menu-item>
+
           <a-menu-divider />
+          <a-menu-item key="LOGS" @click="currentView = 'LOGS'">
+            <template #icon>
+              <FileTextOutlined />
+            </template>
+            日志管理
+          </a-menu-item>
           <a-menu-item key="SETTINGS" @click="currentView = 'SETTINGS'">
             <template #icon>
               <SettingOutlined />
@@ -79,7 +80,7 @@
             <Dashboard v-if="currentView === 'DASHBOARD'" />
             <TaskManager v-if="currentView === 'TASKS'" />
             <WorkerMonitor v-if="currentView === 'WORKERS'" />
-            <ClusterManager v-if="currentView === 'CLUSTER'" />
+            <LogManager v-if="currentView === 'LOGS'" />
             <div v-if="currentView === 'SETTINGS'" class="settings-placeholder">
               <a-result title="系统设置" sub-title="系统配置设置将在此处，允许您管理API密钥、通知首选项和集群扩展策略。">
                 <template #icon>
@@ -106,12 +107,13 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   ApiOutlined,
-  ClusterOutlined
+  FileTextOutlined
 } from '@ant-design/icons-vue'
 import Dashboard from './components/Dashboard.vue'
 import TaskManager from './components/TaskManager.vue'
 import WorkerMonitor from './components/WorkerMonitor.vue'
-import ClusterManager from './components/ClusterManager.vue'
+
+import LogManager from './components/LogManager.vue'
 import type { ViewState } from './types'
 
 const collapsed = ref(false)
@@ -123,7 +125,7 @@ const pageTitle = computed(() => {
     DASHBOARD: '系统概览',
     TASKS: '任务管理',
     WORKERS: '集群健康',
-    CLUSTER: '集群管理',
+    LOGS: '日志管理',
     SETTINGS: '系统配置'
   }
   return titles[currentView.value]
