@@ -26,6 +26,12 @@
             </template>
             集群节点
           </a-menu-item>
+          <a-menu-item key="VISUALIZATION" @click="currentView = 'VISUALIZATION'">
+            <template #icon>
+              <BarChartOutlined />
+            </template>
+            数据可视化
+          </a-menu-item>
 
           <a-menu-divider />
           <a-menu-item key="LOGS" @click="currentView = 'LOGS'">
@@ -80,6 +86,7 @@
             <Dashboard v-if="currentView === 'DASHBOARD'" />
             <TaskManager v-if="currentView === 'TASKS'" />
             <WorkerMonitor v-if="currentView === 'WORKERS'" />
+            <DataVisualization v-if="currentView === 'VISUALIZATION'" />
             <LogManager v-if="currentView === 'LOGS'" />
             <div v-if="currentView === 'SETTINGS'" class="settings-placeholder">
               <a-result title="系统设置" sub-title="系统配置设置将在此处，允许您管理API密钥、通知首选项和集群扩展策略。">
@@ -101,6 +108,7 @@ import {
   DashboardOutlined,
   UnorderedListOutlined,
   CloudServerOutlined,
+  BarChartOutlined,
   SettingOutlined,
   LogoutOutlined,
   BellOutlined,
@@ -114,6 +122,7 @@ import TaskManager from './components/TaskManager.vue'
 import WorkerMonitor from './components/WorkerMonitor.vue'
 
 import LogManager from './components/LogManager.vue'
+import DataVisualization from './components/DataVisualization.vue'
 import type { ViewState } from './types'
 
 const collapsed = ref(false)
@@ -125,6 +134,7 @@ const pageTitle = computed(() => {
     DASHBOARD: '系统概览',
     TASKS: '任务管理',
     WORKERS: '集群健康',
+    VISUALIZATION: '数据可视化',
     LOGS: '日志管理',
     SETTINGS: '系统配置'
   }

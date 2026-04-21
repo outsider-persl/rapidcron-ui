@@ -1,5 +1,14 @@
 import request from '@/utils/request'
-import type { ApiResponse, Stats, Task, TaskInstance, ClusterNode, ClusterStats, Log, DispatchLog } from '@/types'
+import type {
+  ApiResponse,
+  Stats,
+  Task,
+  TaskInstance,
+  ClusterNode,
+  ClusterStats,
+  Log,
+  DispatchLog
+} from '@/types'
 
 export const statsApi = {
   getStats(): Promise<ApiResponse<Stats>> {

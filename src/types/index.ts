@@ -115,4 +115,4 @@ export interface DispatchLog {
   has_error?: boolean
 }
 
-export type ViewState = 'DASHBOARD' | 'TASKS' | 'WORKERS' | 'SETTINGS' | 'LOGS'
+export type ViewState = 'DASHBOARD' | 'TASKS' | 'WORKERS' | 'VISUALIZATION' | 'SETTINGS' | 'LOGS'
